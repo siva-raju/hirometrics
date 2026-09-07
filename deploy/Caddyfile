@@ -1,0 +1,24 @@
+# Caddy config for the HiroMetrics internal test environment.
+# Replace test.hirometrics.com with your actual test subdomain before deploying.
+#
+# The basicauth block puts a username/password wall in front of the ENTIRE
+# app (frontend + API) — this is an internal test box on the open internet,
+# not a public release, so nothing should be reachable without it.
+#
+# Generate the password hash on the server with:
+#   docker run --rm caddy:2-alpine caddy hash-password --plaintext 'your-chosen-password'
+# then paste the resulting hash below in place of the placeholder.
+
+test.hirometrics.com {
+	basicauth /* {
+		hmtester JDJhJDE0JHBsYWNlaG9sZGVyLXJlcGxhY2UtbWU
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:5173
+	}
+}

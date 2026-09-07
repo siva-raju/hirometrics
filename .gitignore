@@ -1,0 +1,32 @@
+# ── Secrets — never commit real environment files ──────────────────────────
+backend/.env
+*.env
+!*.env.example
+!.env.cloud.example
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+backend/venv/
+backend/.venv/
+*.egg-info/
+
+# ── Node / frontend build ────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+npm-debug.log*
+
+# ── Uploaded candidate content — real PII, must never reach git/GitHub ──────
+backend/photos/
+backend/resumes/
+backend/reports/
+
+# ── Local scratch, backups, one-off exports ─────────────────────────────────
+Backup*/
+Test SQL Mass DML/
+*.zip
+hash.txt
+
+# ── OS cruft ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

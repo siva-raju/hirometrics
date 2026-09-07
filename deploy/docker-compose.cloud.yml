@@ -1,0 +1,56 @@
+# Cloud override for internal testing on the Oracle VM.
+# Usage on the server:
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.cloud.yml up -d --build
+#
+# What this changes vs. local dev:
+#  - postgres/redis/backend/frontend no longer publish ports to the host —
+#    only Caddy is reachable from the internet, everything else talks over
+#    the internal docker network by service name.
+#  - Postgres password comes from an env var instead of the hardcoded
+#    "password" in docker-compose.yml.
+#  - Adds a Caddy reverse proxy that terminates HTTPS (auto Let's Encrypt
+#    cert) and puts a login wall in front of the whole app, since this is
+#    an internal test environment, not a public release.
+
+services:
+  postgres:
+    ports: []
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+  redis:
+    ports: []
+    restart: unless-stopped
+
+  backend:
+    ports: []
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/hirometrics
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_URL: https://${HM_DOMAIN}
+      HM_DOMAIN: ${HM_DOMAIN}
+
+  frontend:
+    ports: []
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: hm_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  caddy_data:
+  caddy_config:
