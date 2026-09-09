@@ -59,10 +59,27 @@ def extract_domain(email: str) -> str:
     return email.lower().split("@")[-1] if "@" in email else ""
 
 async def send_email_placeholder(to: str, subject: str, body: str):
-    """Placeholder — wire up FastAPI-Mail when SMTP is configured."""
-    if settings.MAIL_ENABLED:
-        pass  # TODO: implement with FastAPI-Mail
+    """Send email via SMTP. Falls back to console log if MAIL_ENABLED is False."""
     print(f"[EMAIL] To: {to} | Subject: {subject}")
+    if not settings.MAIL_ENABLED or not settings.MAIL_USERNAME:
+        return
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = settings.MAIL_FROM
+        msg["To"]      = to
+        msg.attach(MIMEText(body, "html"))
+        with smtplib.SMTP(settings.MAIL_SERVER, settings.MAIL_PORT, timeout=10) as srv:
+            srv.ehlo()
+            srv.starttls()
+            srv.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+            srv.sendmail(settings.MAIL_FROM, [to], msg.as_string())
+        print(f"[EMAIL] Sent to {to}")
+    except Exception as e:
+        print(f"[EMAIL ERROR] Failed to send to {to}: {e}")
 
 # ── Registration ──────────────────────────────────────────────────────────────
 @router.post("/register/applicant", status_code=201)

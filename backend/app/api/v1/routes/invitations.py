@@ -13,6 +13,8 @@ from app.models.models import (User, Invitation, EnrollmentInvitation,
 from app.core.dependencies import get_current_user, require_roles
 from app.core.security import generate_secure_token
 from app.api.v1.routes.share import build_snapshot_data
+from app.utils.email_templates import email_invitation_to_apply, email_enrollment_invitation
+from app.core.config import settings
 
 def _strip_linked_from(text: str | None) -> str | None:
     """Remove the [Linked from: ...] prefix from folder descriptions before sending to candidates."""
@@ -69,7 +71,37 @@ async def invite_candidate_to_apply(
         )
         db.add(enrollment)
         await db.commit()
-        # TODO: Send enrollment invitation email
+
+        # Send enrollment invitation email
+        try:
+            signup_url = f"{settings.FRONTEND_URL}/register?invite={enroll_token}"
+            inviter_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+            invitee_name = data.candidate_email.split("@")[0]
+            from app.utils.email_templates import email_enrollment_invitation as _enroll_tpl
+            subject, body = _enroll_tpl(
+                invitee_name=invitee_name,
+                inviter_name=inviter_name,
+                signup_url=signup_url,
+            )
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+            if settings.MAIL_ENABLED and settings.MAIL_USERNAME:
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subject
+                msg["From"]    = settings.MAIL_FROM
+                msg["To"]      = data.candidate_email
+                msg.attach(MIMEText(body, "html"))
+                with smtplib.SMTP(settings.MAIL_SERVER, settings.MAIL_PORT, timeout=10) as srv:
+                    srv.ehlo(); srv.starttls()
+                    srv.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+                    srv.sendmail(settings.MAIL_FROM, [data.candidate_email], msg.as_string())
+                print(f"[EMAIL] Enrollment invitation sent to {data.candidate_email}")
+            else:
+                print(f"[EMAIL] (disabled) Would send enrollment invitation to {data.candidate_email}")
+        except Exception as e:
+            print(f"[EMAIL ERROR] Enrollment email failed: {e}")
+
         return {
             "message": "Candidate is not a HiroMetrics user. Enrollment invitation sent.",
             "enrollment_invitation_id": enrollment.id,
@@ -92,7 +124,40 @@ async def invite_candidate_to_apply(
     )
     db.add(invitation)
     await db.commit()
-    # TODO: Send invitation to apply email
+
+    # Send invitation to apply email
+    try:
+        inviter_name = f"{current_user.first_name} {current_user.last_name}".strip() or current_user.email
+        candidate_name = f"{candidate.first_name} {candidate.last_name}".strip() or data.candidate_email
+        position = data.position_title or (org.name if org else "a position")
+        org_name = org.name if org else "HiroMetrics"
+        inbox_url = f"{settings.FRONTEND_URL}/applicant/inbox"
+        subject, body = email_invitation_to_apply(
+            candidate_name=candidate_name,
+            manager_name=inviter_name,
+            org_name=org_name,
+            position=position,
+            accept_url=inbox_url,
+        )
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        if settings.MAIL_ENABLED and settings.MAIL_USERNAME:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"]    = settings.MAIL_FROM
+            msg["To"]      = data.candidate_email
+            msg.attach(MIMEText(body, "html"))
+            with smtplib.SMTP(settings.MAIL_SERVER, settings.MAIL_PORT, timeout=10) as srv:
+                srv.ehlo(); srv.starttls()
+                srv.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+                srv.sendmail(settings.MAIL_FROM, [data.candidate_email], msg.as_string())
+            print(f"[EMAIL] Invitation sent to {data.candidate_email}")
+        else:
+            print(f"[EMAIL] (disabled) Would send invitation to {data.candidate_email}")
+    except Exception as e:
+        print(f"[EMAIL ERROR] Invitation email failed: {e}")
+
     return {
         "message": "Invitation sent",
         "invitation_id": invitation.id,
