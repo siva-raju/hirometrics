@@ -10,6 +10,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    allowedHosts: ["test.hirometrics.com"],
     proxy: {
       "/api": {
         // In Docker, backend container is reachable as 'backend'
