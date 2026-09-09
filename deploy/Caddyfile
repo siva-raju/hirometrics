@@ -1,9 +1,10 @@
 # Caddy config for the HiroMetrics internal test environment.
 # Replace test.hirometrics.com with your actual test subdomain before deploying.
 #
-# The basicauth block puts a username/password wall in front of the ENTIRE
-# app (frontend + API) — this is an internal test box on the open internet,
-# not a public release, so nothing should be reachable without it.
+# The basicauth block puts a username/password wall in front of requests
+# that do not already carry the app's own Bearer token -- this is an
+# internal test box on the open internet, not a public release, so casual
+# visitors and search engines should not be able to reach it at all.
 #
 # The password hash itself is NOT stored here -- it comes from the
 # CADDY_BASIC_AUTH_HASH environment variable (set in the server-only .env
@@ -13,7 +14,16 @@
 # then put it in .env as CADDY_BASIC_AUTH_HASH=<that output>.
 
 test.hirometrics.com {
-	basicauth /* {
+	# Requests already carrying a Bearer token are authenticated at the
+	# app level (they had to pass through the login endpoint, which itself
+	# sits behind this same basic-auth wall, to get that token) -- so only
+	# gate requests WITHOUT one. This avoids a header collision: the app's
+	# own "Authorization: Bearer ..." would otherwise overwrite whatever
+	# Basic credential the browser attached, and get rejected by Caddy.
+	@needs_basic_auth {
+		not header Authorization "Bearer*"
+	}
+	basicauth @needs_basic_auth {
 		hmtester {$CADDY_BASIC_AUTH_HASH}
 	}
 
