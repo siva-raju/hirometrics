@@ -40,6 +40,8 @@ services:
     image: caddy:2-alpine
     container_name: hm_caddy
     restart: unless-stopped
+    environment:
+      CADDY_BASIC_AUTH_HASH: ${CADDY_BASIC_AUTH_HASH}
     ports:
       - "80:80"
       - "443:443"

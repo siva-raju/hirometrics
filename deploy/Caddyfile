@@ -5,13 +5,16 @@
 # app (frontend + API) — this is an internal test box on the open internet,
 # not a public release, so nothing should be reachable without it.
 #
-# Generate the password hash on the server with:
+# The password hash itself is NOT stored here -- it comes from the
+# CADDY_BASIC_AUTH_HASH environment variable (set in the server-only .env
+# file, never committed) so no credential material lives in git history.
+# Generate a hash on the server with:
 #   docker run --rm caddy:2-alpine caddy hash-password --plaintext 'your-chosen-password'
-# then paste the resulting hash below in place of the placeholder.
+# then put it in .env as CADDY_BASIC_AUTH_HASH=<that output>.
 
 test.hirometrics.com {
 	basicauth /* {
-		hmtester JDJhJDE0JHBsYWNlaG9sZGVyLXJlcGxhY2UtbWU
+		hmtester {$CADDY_BASIC_AUTH_HASH}
 	}
 
 	handle /api/* {
