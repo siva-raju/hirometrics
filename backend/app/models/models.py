@@ -308,6 +308,7 @@ class ApplicantProfile(Base):
     profile_completeness: Mapped[int]       = mapped_column(Integer, default=0)
     baseline_locked:      Mapped[bool]      = mapped_column(Boolean, default=False)
     baseline_locked_at:   Mapped[datetime|None] = mapped_column(DateTime)
+    auth_history:         Mapped[dict|None] = mapped_column(JSONB)
     wizard_step:          Mapped[int]       = mapped_column(Integer, default=0)
     created_at:           Mapped[datetime]  = mapped_column(DateTime, default=datetime.utcnow)
     updated_at:           Mapped[datetime]  = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -376,7 +377,8 @@ class WorkHistory(Base):
     description:         Mapped[str|None]  = mapped_column(Text)
     work_arrangement:    Mapped[str|None]  = mapped_column(String(30))
     client_engagements:  Mapped[dict|None] = mapped_column(JSONB)
-    additional_roles:    Mapped[dict|None] = mapped_column(JSONB)               # Extra roles/titles added after freeze
+    additional_roles:    Mapped[dict|None] = mapped_column(JSONB)
+    role_history:        Mapped[dict|None] = mapped_column(JSONB)
     document_url:        Mapped[str|None]  = mapped_column(String(500))
     verification_status: Mapped[str]       = mapped_column(String(30), default="not_started")
     verified_at:         Mapped[datetime|None] = mapped_column(DateTime)
@@ -434,8 +436,8 @@ class Certification(Base):
     cert_version:        Mapped[str|None]  = mapped_column(String(50))
     issued_date:         Mapped[str|None]  = mapped_column(String(20))
     expiry_date:         Mapped[str|None]  = mapped_column(String(20))
-    renewal_date:        Mapped[str|None]  = mapped_column(String(20))          # Latest renewal date
-    renewal_expiry_date: Mapped[str|None]  = mapped_column(String(20))          # Latest renewal expiry
+    renewal_date:        Mapped[str|None]  = mapped_column(String(20))
+    renewal_expiry_date: Mapped[str|None]  = mapped_column(String(20))
     credential_url:      Mapped[str|None]  = mapped_column(String(500))
     document_url:        Mapped[str|None]  = mapped_column(String(500))
     verification_status: Mapped[str]       = mapped_column(String(30), default="not_started")
@@ -459,8 +461,8 @@ class Reference(Base):
     referee_state:       Mapped[str|None]  = mapped_column(String(100))
     referee_city:        Mapped[str|None]  = mapped_column(String(100))
     relationship_type:        Mapped[str|None]  = mapped_column(String(30))
-    relationship_description: Mapped[str|None]  = mapped_column(Text)          # 'Other' relationship explanation
-    is_active:                Mapped[bool]      = mapped_column(Boolean, default=True)  # Deactivate/Activate toggle
+    relationship_description: Mapped[str|None]  = mapped_column(Text)
+    is_active:                Mapped[bool]      = mapped_column(Boolean, default=True)
     verification_token:  Mapped[str|None]  = mapped_column(String(255), unique=True)
     verification_status: Mapped[str]       = mapped_column(String(30), default="not_started")
     verified_at:         Mapped[datetime|None] = mapped_column(DateTime)

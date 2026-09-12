@@ -574,7 +574,7 @@ export default function ApplicantWizard() {
     if (!eduForm.degree_name) missing.push('Degree / diploma name');
     if (missing.length>0) return toast('Required fields: ' + missing.join(', '), 'error');
     setSaving(true);
-    try { await applicantApi.addEducation(eduForm); await invalidate(); setEduForm({education_level:'bachelors',institution_name:'',institution_country:'United States',institution_state:'',institution_city:'',start_date:''}); toast('Education saved'); }
+    try { await applicantApi.addEducation(eduForm); await invalidate(); setEduForm({education_level:'bachelors',institution_name:'',institution_country:'United States',institution_state:'',institution_city:'',start_date:'',degree_name:'',specialization:'',graduation_date:'',end_date:''}); toast('Education saved'); }
     catch(e:any){ toast(e.response?.data?.detail||'Error','error'); }
     finally { setSaving(false); }
   };
@@ -1001,7 +1001,7 @@ export default function ApplicantWizard() {
               </EntryCard>
             ))}
 
-            <AddSection label="Education" onSave={addEdu} onCancel={()=>{}} saving={saving} canSave={!!eduForm.institution_name&&!!eduForm.education_level&&!!eduForm.start_date&&!!eduForm.institution_country&&!!eduForm.institution_city&&!!eduForm.institution_state}>
+            <AddSection label="Education" onSave={addEdu} onCancel={()=>{}} saving={saving} canSave={!!eduForm.institution_name&&!!eduForm.education_level&&!!eduForm.degree_name&&!!eduForm.start_date&&!!eduForm.institution_country&&!!eduForm.institution_city&&!!eduForm.institution_state}>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Level" required>
                   <select value={eduForm.education_level} onChange={e=>setEduForm((p:any)=>({...p,education_level:e.target.value}))} className="input">

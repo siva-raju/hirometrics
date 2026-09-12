@@ -69,7 +69,8 @@ class WorkHistoryCreate(BaseModel):
     work_arrangement: Optional[str] = None  # direct / consulting
     description: Optional[str] = None
     client_engagements: Optional[list] = None
-    additional_roles: Optional[list] = None  # list of ClientEngagementCreate dicts
+    additional_roles: Optional[list] = None
+    role_history: Optional[list] = None  # list of ClientEngagementCreate dicts
 
 class EmploymentRefCreate(BaseModel):
     referee_full_name: Optional[str] = None
@@ -212,6 +213,7 @@ async def get_my_profile(
             "current_city": getattr(profile, "current_city", None),
             "current_state": getattr(profile, "current_state", None),
             "work_auth_notes": getattr(profile, "work_auth_notes", None),
+            "auth_history": getattr(profile, "auth_history", None) or [],
         },
         "addresses": [{"id":a.id,"address_type":a.address_type,"street":a.street,
             "city":a.city,"state":a.state,"country":a.country}
@@ -231,6 +233,7 @@ async def get_my_profile(
             "work_arrangement":getattr(w,"work_arrangement","direct"),
             "client_engagements":getattr(w,"client_engagements",[]) or [],
             "additional_roles":getattr(w,"additional_roles",[]) or [],
+            "role_history":getattr(w,"role_history",[]) or [],
             "verification_status":getattr(w,"verification_status","not_started")}
             for w in work_list],
         "education": [{"id":e.id,"education_level":e.education_level,"degree_name":e.degree_name,
@@ -325,8 +328,9 @@ async def add_work_history(
     # Store client_engagements as list (JSONB)
     client_engagements = d.pop("client_engagements", None)
     additional_roles = d.pop("additional_roles", None)
+    role_history = d.pop("role_history", None)
     work_arrangement = d.pop("work_arrangement", None)
-    entry = WorkHistory(profile_id=profile.id, work_arrangement=work_arrangement.lower() if work_arrangement else None, client_engagements=client_engagements, additional_roles=additional_roles, **d)
+    entry = WorkHistory(profile_id=profile.id, work_arrangement=work_arrangement.lower() if work_arrangement else None, client_engagements=client_engagements, additional_roles=additional_roles, role_history=role_history, **d)
     db.add(entry)
     if profile.wizard_step < 3: profile.wizard_step = 3
     await db.commit()
@@ -349,12 +353,10 @@ async def update_work_history(
             if f == "work_arrangement" and v:
                 v = v.lower()
             setattr(entry, f, v)
-    # Ensure JSONB is flagged modified if client_engagements or additional_roles was updated
     from sqlalchemy.orm.attributes import flag_modified
-    if data.client_engagements is not None:
-        flag_modified(entry, "client_engagements")
-    if data.additional_roles is not None:
-        flag_modified(entry, "additional_roles")
+    if data.client_engagements is not None: flag_modified(entry, "client_engagements")
+    if data.additional_roles is not None: flag_modified(entry, "additional_roles")
+    if data.role_history is not None: flag_modified(entry, "role_history")
     await db.commit()
     return {"message": "Updated"}
 
@@ -405,6 +407,28 @@ async def add_employment_reference(
     return {"id": ref.id, "message": "Reference added"}
 
 # ── Education ─────────────────────────────────────────────────────────────────
+
+@router.post("/me/auth-history")
+async def add_auth_history(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Save auth history entry and update current auth fields without freezing."""
+    profile = await db.scalar(select(ApplicantProfile).where(ApplicantProfile.user_id == current_user.id))
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    from sqlalchemy.orm.attributes import flag_modified
+    history = list(profile.auth_history or [])
+    history.append(payload.get("history_entry", {}))
+    profile.auth_history = history
+    flag_modified(profile, "auth_history")
+    if "legal_status" in payload:         profile.legal_status = payload["legal_status"]
+    if "immigration_category" in payload: profile.immigration_category = payload["immigration_category"]
+    if "work_auth_notes" in payload:      profile.work_auth_notes = payload["work_auth_notes"]
+    await db.commit()
+    return {"message": "Auth history updated"}
+
 @router.post("/me/education", status_code=201)
 async def add_education(
     data: EducationCreate,
