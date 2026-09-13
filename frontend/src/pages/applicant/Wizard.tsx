@@ -166,11 +166,23 @@ function EntryCard({ title, subtitle, dates, locked, onEdit, onRemove, children,
 }
 
 // ── Add form wrapper ──────────────────────────────────────────────────────────
-function AddSection({ label, children, onSave, onCancel, saving, canSave }: {
+function AddSection({ label, children, onSave, onCancel, saving, canSave, saveRef }: {
   label:string; children:React.ReactNode;
   onSave:()=>void; onCancel:()=>void; saving:boolean; canSave:boolean;
+  saveRef?: { current: ((()=>Promise<void>)|null) };
 }) {
   const [open, setOpen] = useState(false);
+
+  // Expose save-and-close to parent for "Save & continue later"
+  useEffect(() => {
+    if (saveRef) {
+      saveRef.current = (open && canSave)
+        ? async () => { onSave(); setOpen(false); }
+        : null;
+    }
+    return () => { if (saveRef) saveRef.current = null; };
+  }, [open, canSave, onSave, saveRef]);
+
   if (!open) return (
     <button onClick={()=>setOpen(true)}
       className="w-full flex items-center gap-2 p-3 rounded-xl border-2 border-dashed border-gray-200 text-sm font-semibold text-gray-500 hover:border-blue-300 hover:text-blue-600 transition-all mt-3">
@@ -182,7 +194,7 @@ function AddSection({ label, children, onSave, onCancel, saving, canSave }: {
       <div className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-3">New {label}</div>
       {children}
       <div className="flex gap-2 mt-3">
-        <button onClick={()=>{if(!canSave)return;onSave();}} disabled={saving||!canSave}
+        <button onClick={()=>{if(!canSave)return;onSave();setOpen(false);}} disabled={saving||!canSave}
           className="btn-primary text-xs disabled:opacity-50 cursor-pointer"
           title={!canSave?'Please fill in all required fields (marked with *)':undefined}>
           {saving?'Saving...':'Save '+label}
@@ -281,6 +293,10 @@ export default function ApplicantWizard() {
   const [expandedWorkId, setExpandedWorkId] = useState<string|null>(null); // which work entry is open
   const [expandedCeKey, setExpandedCeKey] = useState<string|null>(null);   // which client engagement is open
   const [showEditClientForm, setShowEditClientForm] = useState(false);       // add CE form in edit mode
+  const eduSaveRef  = useRef<(()=>Promise<void>)|null>(null);
+  const workSaveRef = useRef<(()=>Promise<void>)|null>(null);
+  const refSaveRef  = useRef<(()=>Promise<void>)|null>(null);
+  const certSaveRef = useRef<(()=>Promise<void>)|null>(null);
 
   // Demographics form
   const [demo, setDemo] = useState<any>({});
@@ -679,7 +695,7 @@ export default function ApplicantWizard() {
 
             {(data?.education||[]).map((e:any) => (
               <EntryCard key={e.id}
-                title={e.degree_name||({'high_school':'High School','diploma':'Diploma / Certificate','bachelors':'Under Graduate','pg_degree':'Post Graduate','doctorate':'Doctorate','research':'Research','other':'Other'}[e.education_level])||'Education'}
+                title={e.degree_name||({'high_school':'High School','diploma':'Diploma / Certificate','bachelors':'Under Graduate','pg_degree':'Post Graduate','doctorate':'Doctorate','research':'Research','other':'Other'} as Record<string,string>)[e.education_level])||'Education'}
                 subtitle={e.institution_name}
                 dates={[e.start_date,e.end_date].filter(Boolean).join(' – ')}
                 locked={isLocked}
