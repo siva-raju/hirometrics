@@ -226,7 +226,7 @@ function SubmitDialog({ onConfirm, onCancel }: { onConfirm:()=>void; onCancel:()
               "HiroMetrics <strong>may charge a fee</strong> to review corrections.",
               "You may continue to <strong>add new entries</strong> at any time.",
               "Your current <strong>identity photo will be frozen</strong> for this submission. This image will potentially be used for interview and onboarding verification.",
-              "Your profile will be marked as <strong>verified and ready</strong> for submission to hiring entities.",
+              "Your profile will be marked as <strong>ready</strong> for submission to hiring entities.",
             ].map((t,i) => <li key={i} className="flex gap-2"><span className="text-blue-500 flex-shrink-0 mt-0.5">•</span><span dangerouslySetInnerHTML={{ __html:t }}/></li>)}
           </ul>
         </div>
