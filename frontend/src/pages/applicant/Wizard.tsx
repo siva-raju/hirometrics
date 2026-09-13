@@ -288,7 +288,7 @@ function LockedWorkView({ w, isLocked, saving, toast, invalidate, setSaving, api
       </div>
 
       {/* Add New Role/Title + Update End Date — only for 'Present' roles */}
-      {isCurrentRole && <div className="flex gap-2 flex-wrap">
+      {(!w.end_date || w.end_date.toLowerCase()==='present') && <div className="flex gap-2 flex-wrap">
         <button type="button" onClick={()=>{setShowNewRole(v=>!v);setShowEndDate(false);}}
           className="btn-secondary text-xs">
           + Add New Role/Title
@@ -417,11 +417,11 @@ function LockedWorkView({ w, isLocked, saving, toast, invalidate, setSaving, api
                   <Inp value={clientForm.end_date} onChange={(e:any)=>setClientForm((p:any)=>({...p,end_date:e.target.value}))}/>
                 </Field>
               </div>
-              <Field label="Engagement Type" className="mt-1">
+              <div className="mt-1"><Field label="Engagement Type">
                 <select value={clientForm.engagement_type||"On-site"} onChange={e=>setClientForm((p:any)=>({...p,engagement_type:e.target.value}))} className="input">
                   <option>On-site</option><option>Remote</option><option>Hybrid</option>
                 </select>
-              </Field>
+              </Field></div>
               <div className="flex gap-2">
                 <button className="btn-primary text-xs"
                   onClick={async()=>{
