@@ -94,19 +94,25 @@ function ResumePickerModal({ resumes, onSelect, onClose }: {
 }
 
 // ── Job Detail Slide-over ─────────────────────────────────────────────────────
-function JobDetailPanel({ item, resumes, profileReady, savedResume, onSaveResume, onSubmit, onClose }: {
+function JobDetailPanel({ item, resumes, profileReady, savedResume, savedCoverMsg, onSaveResume, onSubmit, onClose }: {
   item: InboxItem;
   resumes: ResumeVersion[];
   profileReady: boolean;
   savedResume: ResumeVersion | null;
-  onSaveResume: (r: ResumeVersion) => void;
+  savedCoverMsg?: string;
+  onSaveResume: (r: ResumeVersion, coverMsg?: string) => void;
   onSubmit: (resumeId: string, coverMsg: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const [coverMsg, setCoverMsg] = useState('');
+  const [coverMsg, setCoverMsg] = useState(savedCoverMsg ?? '');
   const [selectedResume, setSelectedResume] = useState<ResumeVersion | null>(
-    savedResume ?? resumes.find(r => r.is_current) ?? null
+    savedResume ?? resumes.find((r: ResumeVersion) => r.is_current) ?? null
   );
+  useEffect(() => {
+    if (!selectedResume && resumes.length > 0)
+      setSelectedResume(savedResume ?? resumes.find((r: ResumeVersion) => r.is_current) ?? resumes[0]);
+  }, [resumes, savedResume]);
+
   const [showPicker, setShowPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -293,7 +299,7 @@ function JobDetailPanel({ item, resumes, profileReady, savedResume, onSaveResume
             {submitting ? 'Submitting…' : 'Apply'}
           </button>
           <button
-            onClick={() => { if (selectedResume) onSaveResume(selectedResume); onClose(); }}
+            onClick={() => { if (selectedResume) onSaveResume(selectedResume, coverMsg); onClose(); }}
             disabled={submitting}
             className="btn-primary text-sm"
             style={{ background: '#64748b' }}>
@@ -320,6 +326,7 @@ export default function CandidateInbox() {
   const [showIncomplete, setShowIncomplete]       = useState(false);
   // Resume attachment per inbox item — populated from API (attached_resume field on job links)
   const [attachedResumes, setAttachedResumes] = useState<Record<string, ResumeVersion>>({});
+  const [savedCoverMsgs, setSavedCoverMsgs] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -333,7 +340,7 @@ export default function CandidateInbox() {
     queryFn: () => applicantApi.getProfile().then(r => r.data),
     staleTime: 30_000,
   });
-  const profileReady = !!(profileData?.profile?.baseline_locked && profileData?.current_resume);
+  const profileReady = !!(profileData?.profile?.baseline_locked);  // resume selected in panel
 
   // Resume list
   const { data: resumes = [] } = useQuery({
@@ -409,7 +416,7 @@ export default function CandidateInbox() {
     if (openItem.type === 'Link') {
       await linkApplyMutation.mutateAsync({ id: openItem.id, message: coverMsg, resume_id: effectiveResumeId });
     } else {
-      await respondMutation.mutateAsync({ id: openItem.id, message: coverMsg, resume_id: effectiveResumeId });
+      await respondMutation.mutateAsync({ id: openItem.id, message: coverMsg, resume_id: effectiveResumeId } as any);
     }
   };
 
@@ -461,8 +468,10 @@ export default function CandidateInbox() {
           resumes={resumes as ResumeVersion[]}
           profileReady={profileReady}
           savedResume={attachedResumes[openItem.id] ?? null}
-          onSaveResume={(r) => {
+          savedCoverMsg={savedCoverMsgs[openItem.id] ?? ''}
+          onSaveResume={(r, coverMsg) => {
             setAttachedResumes(prev => ({ ...prev, [openItem.id]: r }));
+            if (coverMsg !== undefined) setSavedCoverMsgs((prev: Record<string,string>) => ({ ...prev, [openItem.id]: coverMsg ?? '' }));
             applicantApi.attachResumeToJobLink?.(openItem.id, r.id).catch(() => {});
           }}
           onSubmit={handleSubmit}

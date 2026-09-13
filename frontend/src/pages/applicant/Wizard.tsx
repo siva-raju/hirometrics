@@ -829,24 +829,6 @@ export default function ApplicantWizard() {
               </div>
             </div>
 
-            {/* Authorization history */}
-            {isLocked && (data?.profile?.auth_history||[]).length > 0 && (
-              <div className="mt-4 pt-3 border-t border-gray-100">
-                <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Previous Authorizations</div>
-                {(data.profile.auth_history as any[]).map((h:any,i:number)=>(
-                  <div key={i} className="flex gap-2 text-xs text-gray-600 py-0.5">
-                    <span className="font-medium">
-                      {h.legal_status==="visa_holder"?"Visa Holder":h.legal_status==="us_citizen"?"US Citizen":h.legal_status==="permanent_resident"?"Permanent Resident":h.legal_status||""}
-                      {h.immigration_category?` — ${h.immigration_category}`:""}
-                    </span>
-                    <span className="text-gray-400">
-                      {h.start_date?fmtDate(h.start_date):"—"} – {h.end_date?fmtDate(h.end_date):"—"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
             <div className="divider"/>
 
             {/* Identity Photo */}
@@ -1027,6 +1009,24 @@ export default function ApplicantWizard() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Previous Authorizations */}
+              {isLocked && (data?.profile?.auth_history||[]).length > 0 && (
+                <div className="mt-3 pt-2 border-t border-gray-100">
+                  <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Previous Authorizations</div>
+                  {(data.profile.auth_history as any[]).map((h:any,i:number)=>(
+                    <div key={i} className="flex gap-2 text-xs text-gray-600 py-0.5">
+                      <span className="font-medium">
+                        {h.legal_status==="visa_holder"?"Visa Holder":h.legal_status==="us_citizen"?"US Citizen":h.legal_status==="permanent_resident"?"Permanent Resident":h.legal_status||""}
+                        {h.immigration_category?` — ${h.immigration_category}`:""}
+                      </span>
+                      <span className="text-gray-400">
+                        {h.start_date?fmtDate(h.start_date):"—"} – {h.end_date?fmtDate(h.end_date):"—"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
