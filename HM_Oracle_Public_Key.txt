@@ -1,0 +1,13 @@
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII0YuJn8qz35L0117DBncvtG+tnJMcs2VL0dCt93wrGv hirometrics-oracle
+
+Public IP4 - AWS:	18.223.166.129
+
+Github Repo Key from AWS:	ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMRKAePAgGrGZp/id3YHq1iqykGYizV468OZ+2xoftnk hm-aws-server
+
+secret keys (AWS):
+feb51d8344bcb24467d442a2206c016b64a75f3729ee4afd3fd8f0a7f4a67ce9
+4ad9748936055f4196f979ce8ea8d277e78c8019a06aa3ee88ae2865d360360e
+
+login-wall pwd: $2a$14$pH0RJCraYFFJZtqM6JC8xuFCxKNGMaBDH/7kF3kyFiJuMCLrmHzt6
+
+docker run --rm caddy:2-alpine caddy hash-password --plaintext 'New_Password'

@@ -38,6 +38,7 @@ export const authApi = {
 
 export const applicantApi = {
   getProfile:         () => api.get('/applicants/me'),
+  addAuthHistory:       (payload: any) => api.post('/applicants/me/auth-history', payload),
   updateDemographics: (d: any) => api.patch('/applicants/me/demographics', d),
   saveAddress:        (d: any) => api.post('/applicants/me/address', d),
   addWorkHistory:     (d: any) => api.post('/applicants/me/work-history', d),

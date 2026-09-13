@@ -164,6 +164,12 @@ export default function AppLayout() {
                   style={{ color: '#93c5fd' }}>{initials}</div>
               )}
             </div>
+            {fullName && (
+              <div className="mt-2 text-center text-[11px] font-semibold px-2 truncate"
+                style={{ color: "rgba(255,255,255,0.75)" }}>
+                {fullName}
+              </div>
+            )}
           </div>
         ) : (
           <div className="px-4 pt-3">

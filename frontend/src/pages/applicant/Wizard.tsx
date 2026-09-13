@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { applicantApi } from '../../services/api';
+
 import { US_STATES, COUNTRIES, VISA_TYPES } from '../../data/geo';
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -173,7 +174,6 @@ function AddSection({ label, children, onSave, onCancel, saving, canSave, saveRe
 }) {
   const [open, setOpen] = useState(false);
 
-  // Expose save-and-close to parent for "Save & continue later"
   useEffect(() => {
     if (saveRef) {
       saveRef.current = (open && canSave)
@@ -206,7 +206,6 @@ function AddSection({ label, children, onSave, onCancel, saving, canSave, saveRe
   );
 }
 
-// ── Dialogs ───────────────────────────────────────────────────────────────────
 function SubmitDialog({ onConfirm, onCancel }: { onConfirm:()=>void; onCancel:()=>void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background:'rgba(0,0,0,0.6)' }}>
@@ -266,6 +265,208 @@ function FinishDialog({ hasResume, onPark, onSubmit, onClose }: { hasResume:bool
   );
 }
 
+
+// ── Locked Work Entry View ────────────────────────────────────────────────────
+function LockedWorkView({ w, isLocked, saving, toast, invalidate, setSaving, api,
+  clientForm, setClientForm, expandedCeKey, setExpandedCeKey,
+  showEditClientForm, setShowEditClientForm }: any) {
+  const [showNewRole, setShowNewRole] = useState(false);
+  const [showEndDate, setShowEndDate] = useState(false);
+  const [newRole, setNewRole] = useState({ title:'', start_date:'', end_date:'Present' });
+  const [endDate, setEndDate] = useState('');
+  const isConsulting = w.work_arrangement?.toLowerCase()==='consulting';
+
+  return (
+    <div className="space-y-4">
+      {/* Read-only primary details */}
+      <div className="text-xs text-gray-600 space-y-1">
+        <p><strong>Employment type:</strong> {w.employment_type}</p>
+        <p><strong>Company:</strong> {w.employer_name}</p>
+        <p><strong>Location:</strong> {[w.employer_city,w.employer_state,w.employer_country].filter(Boolean).join(', ')}</p>
+        <p><strong>Dates:</strong> {w.start_date} – {w.end_date||'Present'}</p>
+        <p><strong>Nature of work:</strong> {isConsulting ? 'Consulting/Contracting' : 'Direct'}</p>
+      </div>
+
+      {/* Add New Role/Title + Update End Date — only for 'Present' roles */}
+      {isCurrentRole && <div className="flex gap-2 flex-wrap">
+        <button type="button" onClick={()=>{setShowNewRole(v=>!v);setShowEndDate(false);}}
+          className="btn-secondary text-xs">
+          + Add New Role/Title
+        </button>
+        <button type="button" onClick={()=>{setShowEndDate(v=>!v);setShowNewRole(false);}}
+          className="btn-secondary text-xs">
+          📅 Update Employment End Date
+        </button>
+      </div>}
+
+      {/* Add New Role/Title form */}
+      {showNewRole && (
+        <div className="border-2 border-blue-200 rounded-xl p-3 bg-blue-50/20 space-y-3">
+          <div className="text-xs font-bold text-blue-700 uppercase tracking-wide">New Role / Title</div>
+        <div className="text-[11px] text-amber-600 italic">Current role will be end dated to the start date of the new role</div>
+          <Field label="Role / Title" required>
+            <input value={newRole.title} onChange={e=>setNewRole((p:any)=>({...p,title:e.target.value}))} className="input" placeholder="Senior Developer"/>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="From (MM/YYYY)" required>
+              <DateInput value={newRole.start_date} onChange={v=>setNewRole((p:any)=>({...p,start_date:v}))} required/>
+            </Field>
+            <Field label="To (MM/YYYY or PRESENT)" required>
+              <DateInput value={newRole.end_date} onChange={v=>setNewRole((p:any)=>({...p,end_date:v}))} placeholder="Present"/>
+            </Field>
+          </div>
+          <div className="flex gap-2">
+            <button disabled={saving||!newRole.title||!/^(0[1-9]|1[0-2])\/\d{4}$/.test(newRole.start_date||"")}
+              className="btn-primary text-xs disabled:opacity-50"
+              onClick={async()=>{
+                setSaving(true);
+                try {
+                  // Archive current role into role_history before switching to new role
+                  const prevRoles = [...(w.role_history||[]), {title:w.title,start_date:w.start_date,end_date:newRole.start_date}];
+                  const updated = { ...w, title:newRole.title, start_date:newRole.start_date, end_date:newRole.end_date, role_history:prevRoles };
+                  await api.updateWorkHistory(w.id, updated);
+                  await invalidate();
+                  setShowNewRole(false);
+                  setNewRole({title:'',start_date:'',end_date:'Present'});
+                  toast('New role saved — will be frozen on next profile submission');
+                } catch(e:any){ toast('Save failed','error'); }
+                finally { setSaving(false); }
+              }}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button onClick={()=>{setShowNewRole(false);setNewRole({title:'',start_date:'',end_date:''}); }} className="btn-secondary text-xs">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Update End Date popup */}
+      {showEndDate && (
+        <div className="border-2 border-amber-200 rounded-xl p-3 bg-amber-50/20 space-y-3">
+          <div className="text-xs font-bold text-amber-700 uppercase tracking-wide">End Date of Current Employment</div>
+          <Field label="End Date (MM/YYYY)" required>
+            <DateInput value={endDate} onChange={v=>setEndDate(v)} required/>
+          </Field>
+          <div className="flex gap-2">
+            <button disabled={saving||!endDate}
+              className="btn-primary text-xs disabled:opacity-50"
+              onClick={async()=>{
+                setSaving(true);
+                try {
+                  await api.updateWorkHistory(w.id, {...w, end_date: endDate});
+                  await invalidate();
+                  setShowEndDate(false); setEndDate('');
+                  toast('End date updated');
+                } catch(e:any){ toast('Update failed','error'); }
+                finally { setSaving(false); }
+              }}>
+              {saving ? 'Saving...' : 'OK'}
+            </button>
+            <button onClick={()=>{setShowEndDate(false);setEndDate('');}} className="btn-secondary text-xs">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Previous Roles History */}
+      {(w.role_history||[]).length > 0 && (
+        <div className="mt-3 pt-2 border-t border-gray-100">
+          <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Previous Roles</div>
+          {(w.role_history as any[]).map((r:any,i:number)=>(
+            <div key={i} className="flex gap-2 text-xs text-gray-600 py-0.5">
+              <span className="font-medium">{r.title}</span>
+              <span className="text-gray-400">{r.start_date?fmtDate(r.start_date):'—'} – {r.end_date?fmtDate(r.end_date):'—'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Client Engagements for consulting — always editable even when locked */}
+      {isConsulting && (
+        <div className="ml-4 pl-3 border-l-2 border-blue-200">
+          <div className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-2 flex items-center gap-2">
+            <span>↳</span> Client Engagements
+          </div>
+          {(w.client_engagements||[]).map((ce:any,i:number)=>(
+            <div key={i} className="mb-2 p-2 rounded-lg text-xs text-gray-600" style={{ background:'#f8fafc', border:'1px solid #e2e8f0' }}>
+              <p className="font-semibold">{ce.client_name} <span className="font-normal text-gray-400">({ce.start_date} – {ce.end_date})</span></p>
+              <p>{ce.role_at_client} · {ce.engagement_type}</p>
+            </div>
+          ))}
+          {!showEditClientForm ? (
+            <button onClick={()=>setShowEditClientForm(true)} className="btn-secondary text-xs mt-1">+ Add Client Engagement</button>
+          ) : (
+            <div className="border border-blue-200 rounded-xl p-3 bg-blue-50/20 mt-2 space-y-2">
+              <div className="text-xs font-bold text-blue-700 mb-2">New Client Engagement</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Client company" required><Inp value={clientForm.client_name} onChange={(e:any)=>setClientForm((p:any)=>({...p,client_name:e.target.value}))} placeholder="Acme Corp"/></Field>
+                <Field label="Role at client" required><Inp value={clientForm.role_at_client} onChange={(e:any)=>setClientForm((p:any)=>({...p,role_at_client:e.target.value}))} placeholder="Senior Developer"/></Field>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-1">
+                <Field label="Country">
+                  <select value={clientForm.client_country||"United States"} onChange={e=>setClientForm((p:any)=>({...p,client_country:e.target.value}))} className="input">
+                    {COUNTRIES.map((cc:string)=><option key={cc}>{cc}</option>)}
+                  </select>
+                </Field>
+                <Field label="State/Province"><StateAutocomplete value={clientForm.client_state||""} country={clientForm.client_country||"United States"} onChange={v=>setClientForm((p:any)=>({...p,client_state:v}))}/></Field>
+                <Field label="City"><Inp value={clientForm.client_city||""} onChange={(e:any)=>setClientForm((p:any)=>({...p,client_city:e.target.value}))}/></Field>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <Field label="From (MM/YYYY)" required>
+                  <Inp value={clientForm.start_date} onChange={(e:any)=>setClientForm((p:any)=>({...p,start_date:e.target.value}))} placeholder="01/2022"/>
+                </Field>
+                <Field label="To (MM/YYYY or PRESENT)">
+                  <Inp value={clientForm.end_date} onChange={(e:any)=>setClientForm((p:any)=>({...p,end_date:e.target.value}))}/>
+                </Field>
+              </div>
+              <Field label="Engagement Type" className="mt-1">
+                <select value={clientForm.engagement_type||"On-site"} onChange={e=>setClientForm((p:any)=>({...p,engagement_type:e.target.value}))} className="input">
+                  <option>On-site</option><option>Remote</option><option>Hybrid</option>
+                </select>
+              </Field>
+              <div className="flex gap-2">
+                <button className="btn-primary text-xs"
+                  onClick={async()=>{
+                    if(!clientForm.client_name||!clientForm.role_at_client||!clientForm.start_date) return toast('Client name, role and start date required','error');
+                    setSaving(true);
+                    try {
+                      const updated = {...w, client_engagements:[...(w.client_engagements||[]),clientForm]};
+                      await api.updateWorkHistory(w.id, updated);
+                      await invalidate();
+                      setClientForm({client_name:'',client_country:'United States',client_state:'',client_city:'',role_at_client:'',start_date:'',end_date:'Present',engagement_type:'On-site'});
+                      setShowEditClientForm(false);
+                      toast('Client engagement added — will be frozen on next submission');
+                    } catch(e:any){ toast('Save failed','error'); }
+                    finally { setSaving(false); }
+                  }}>
+                  Save Client Engagement
+                </button>
+                <button onClick={()=>setShowEditClientForm(false)} className="btn-secondary text-xs">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Date display helper: YYYY-MM-DD → MM/DD/YYYY, YYYY-MM → MM/YYYY ──────
+function fmtDate(d: string|null|undefined): string {
+  if (!d) return '';
+  if (d.toLowerCase() === 'present') return 'Present';
+  const parts = d.split('-');
+  if (parts.length === 3) return `${parts[1]}/${parts[2]}/${parts[0]}`;
+  if (parts.length === 2) return `${parts[1]}/${parts[0]}`;
+  return d;
+}
+
+// MM/YYYY validator (also accepts "present" case-insensitive)
+function validMMYYYY(v: string): boolean {
+  if (!v) return false;
+  if (v.toLowerCase() === 'present') return true;
+  return /^(0[1-9]|1[0-2])\/\d{4}$/.test(v);
+}
+
 // ── Main Wizard ───────────────────────────────────────────────────────────────
 export default function ApplicantWizard() {
   const navigate = useNavigate();
@@ -292,11 +493,18 @@ export default function ApplicantWizard() {
   const [expandedEntry, setExpandedEntry] = useState<string|null>(null);  // edu/ref/cert
   const [expandedWorkId, setExpandedWorkId] = useState<string|null>(null); // which work entry is open
   const [expandedCeKey, setExpandedCeKey] = useState<string|null>(null);   // which client engagement is open
-  const [showEditClientForm, setShowEditClientForm] = useState(false);       // add CE form in edit mode
+  const [showEditClientForm, setShowEditClientForm] = useState(false);
   const eduSaveRef  = useRef<(()=>Promise<void>)|null>(null);
   const workSaveRef = useRef<(()=>Promise<void>)|null>(null);
   const refSaveRef  = useRef<(()=>Promise<void>)|null>(null);
   const certSaveRef = useRef<(()=>Promise<void>)|null>(null);
+       // add CE form in edit mode
+  const [showAuthUpdate, setShowAuthUpdate] = useState(false);               // Update Authorization Status form
+  const [authUpdate, setAuthUpdate] = useState<any>({                        // auth update form fields
+    legal_status: '', immigration_category: '', work_auth_notes: '',
+    prev_end_date: '', new_start_date: '',
+  });
+
 
   // Demographics form
   const [demo, setDemo] = useState<any>({});
@@ -354,9 +562,18 @@ export default function ApplicantWizard() {
   const [editingWork, setEditingWork] = useState<any>(null);
   const [editingEdu, setEditingEdu] = useState<any>(null);
   const [editingRef, setEditingRef] = useState<any>(null);
+  const [deactivatingRefId, setDeactivatingRefId] = useState<string|null>(null);
+
   const [editingCert, setEditingCert] = useState<any>(null);
+  const [updatingCertId, setUpdatingCertId] = useState<string|null>(null);
+  const [certRenewal, setCertRenewal] = useState<any>({renewal_date:'',renewal_expiry_date:''});
+
 
   const isLocked = data?.profile?.baseline_locked;
+  const [newlyAddedIds, setNewlyAddedIds] = useState<Set<string>>(new Set());
+  // Items added after freeze are editable until candidate re-submits
+  const isItemLocked = (item: any) => isLocked && !newlyAddedIds.has(item?.id || '');
+
   const hasResume = !!data?.current_resume;
   const photoUrl = photoPreview || data?.user?.profile_photo_url;
   const lockedDate = data?.profile?.baseline_locked_at
@@ -365,6 +582,8 @@ export default function ApplicantWizard() {
 
   const d = (k:string) => (e:any) => setDemo((p:any) => ({...p,[k]:e.target.value}));
   const visaDisabled = ['us_citizen','permanent_resident','other',''].includes(demo.legal_status||'');
+  const isVisaHolder = demo.legal_status === 'visa_holder';
+
   const otherSelected = demo.legal_status==='other' || demo.immigration_category==='Other';
 
   const validateWorkDates = () => {
@@ -383,6 +602,7 @@ export default function ApplicantWizard() {
     if (!demo.current_city) missing.push('Current city');
     if (!demo.legal_status) missing.push('Authorization status');
     if (otherSelected && !demo.work_auth_notes) missing.push('Additional information (Other explanation)');
+    if (demo.legal_status === 'visa_holder' && !demo.work_auth_notes) missing.push('Sponsoring Employer (required for Visa Holder)');
     return missing;
   };
 
@@ -421,9 +641,10 @@ export default function ApplicantWizard() {
     if (!eduForm.institution_state) missing.push('State/Province');
     if (!eduForm.institution_city) missing.push('City');
     if (!eduForm.start_date) missing.push('Start date');
+    if (!eduForm.degree_name) missing.push('Degree / diploma name');
     if (missing.length>0) return toast('Required fields: ' + missing.join(', '), 'error');
     setSaving(true);
-    try { await applicantApi.addEducation(eduForm); await invalidate(); setEduForm({education_level:'bachelors',institution_name:'',institution_country:'United States',institution_state:'',institution_city:'',start_date:''}); toast('Education saved'); }
+    try { const _eduR = await applicantApi.addEducation(eduForm); await invalidate(); if(_eduR?.data?.id) setNewlyAddedIds((p:any)=>new Set([...p,_eduR.data.id])); setEduForm({education_level:'bachelors',institution_name:'',institution_country:'United States',institution_state:'',institution_city:'',start_date:''}); toast('Education saved'); }
     catch(e:any){ toast(e.response?.data?.detail||'Error','error'); }
     finally { setSaving(false); }
   };
@@ -449,7 +670,7 @@ export default function ApplicantWizard() {
     if (workForm.work_arrangement?.toLowerCase()==='consulting' && (workForm.client_engagements||[]).length===0) wMissing.push('At least one client engagement');
     if (wMissing.length>0) return toast('Required fields: ' + wMissing.join(', '), 'error');
     setSaving(true);
-    try { await applicantApi.addWorkHistory(workForm); await invalidate(); setWorkForm({employment_type:'Full-time Employee',employer_name:'',title:'',employer_country:'United States',employer_state:'',employer_city:'',start_date:'',end_date:'Present',work_arrangement:'direct',client_engagements:[],_open:false}); setDateErrors({}); toast('Work history saved'); }
+    try { const _whR = await applicantApi.addWorkHistory(workForm); await invalidate(); if(_whR?.data?.id) setNewlyAddedIds((p:any)=>new Set([...p,_whR.data.id])); setWorkForm({employment_type:'Full-time Employee',employer_name:'',title:'',employer_country:'United States',employer_state:'',employer_city:'',start_date:'',end_date:'Present',work_arrangement:'direct',client_engagements:[]}); setDateErrors({}); toast('Work history saved'); }
     catch(e:any){ toast(e.response?.data?.detail||'Error','error'); }
     finally { setSaving(false); }
   };
@@ -471,9 +692,13 @@ export default function ApplicantWizard() {
     if (!refForm.referee_first_name) rMissing.push('First name');
     if (!refForm.referee_last_name) rMissing.push('Last name');
     if (!refForm.referee_email) rMissing.push('Email');
+    if (!refForm.referee_title) rMissing.push('Title/Role');
+    if (!refForm.referee_company) rMissing.push('Company');
+    if (!refForm.relationship_type) rMissing.push('Relationship');
+    if (refForm.relationship_type==='Other' && !refForm.relationship_description) rMissing.push('Relationship description');
     if (rMissing.length>0) return toast('Required fields: ' + rMissing.join(', '), 'error');
     setSaving(true);
-    try { await applicantApi.addReference(refForm); await invalidate(); setRefForm({referee_first_name:'',referee_last_name:'',referee_email:''}); toast('Reference saved'); }
+    try { const _refR = await applicantApi.addReference(refForm); await invalidate(); if(_refR?.data?.id) setNewlyAddedIds((p:any)=>new Set([...p,_refR.data.id])); setRefForm({referee_first_name:'',referee_last_name:'',referee_email:''}); toast('Reference saved'); }
     catch(e:any){ toast(e.response?.data?.detail||'Error','error'); }
     finally { setSaving(false); }
   };
@@ -486,9 +711,15 @@ export default function ApplicantWizard() {
   };
 
   const addCert = async () => {
-    if (!certForm.cert_name) return toast('Certification name required','error');
+    const cMissing = [];
+    if (!certForm.cert_name) cMissing.push('Certification name');
+    if (!certForm.cert_type) cMissing.push('Type');
+    if (!certForm.authority_name) cMissing.push('Certifying authority');
+    if (!certForm.issued_date) cMissing.push('Issued date');
+    if (!certForm.expiry_date) cMissing.push('Expiration date');
+    if (cMissing.length>0) return toast('Required fields: ' + cMissing.join(', '), 'error');
     setSaving(true);
-    try { await applicantApi.addCertification(certForm); await invalidate(); setCertForm({cert_name:''}); toast('Certification saved'); }
+    try { const _certR = await applicantApi.addCertification(certForm); await invalidate(); if(_certR?.data?.id) setNewlyAddedIds((p:any)=>new Set([...p,_certR.data.id])); setCertForm({cert_name:''}); toast('Certification saved'); }
     catch(e:any){ toast(e.response?.data?.detail||'Error','error'); }
     finally { setSaving(false); }
   };
@@ -516,7 +747,6 @@ export default function ApplicantWizard() {
 
   const handlePark = async () => {
     setShowFinish(false);
-    // Flush any open AddSection form before parking
     if (workForm._open && workForm.title && workForm.employer_name && workForm.start_date) {
       try { await addWork(); } catch(_){}
     }
@@ -599,6 +829,24 @@ export default function ApplicantWizard() {
               </div>
             </div>
 
+            {/* Authorization history */}
+            {isLocked && (data?.profile?.auth_history||[]).length > 0 && (
+              <div className="mt-4 pt-3 border-t border-gray-100">
+                <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Previous Authorizations</div>
+                {(data.profile.auth_history as any[]).map((h:any,i:number)=>(
+                  <div key={i} className="flex gap-2 text-xs text-gray-600 py-0.5">
+                    <span className="font-medium">
+                      {h.legal_status==="visa_holder"?"Visa Holder":h.legal_status==="us_citizen"?"US Citizen":h.legal_status==="permanent_resident"?"Permanent Resident":h.legal_status||""}
+                      {h.immigration_category?` — ${h.immigration_category}`:""}
+                    </span>
+                    <span className="text-gray-400">
+                      {h.start_date?fmtDate(h.start_date):"—"} – {h.end_date?fmtDate(h.end_date):"—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="divider"/>
 
             {/* Identity Photo */}
@@ -657,7 +905,8 @@ export default function ApplicantWizard() {
               <p className="text-xs text-gray-400 mb-3 italic">Information provided must be accurate and may be verified during hiring or upon hire.</p>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Authorization status" required>
-                  <select value={demo.legal_status||''} onChange={d('legal_status')} disabled={isLocked} className="input">
+                  <select value={demo.legal_status||''} onChange={d('legal_status')} disabled={isLocked} className="input"
+                    style={isLocked ? { background:'#f8fafc', color:'#94a3b8' } : {}}>
                     <option value="">Select...</option>
                     <option value="us_citizen">US Citizen</option>
                     <option value="permanent_resident">Permanent Resident (Green Card)</option>
@@ -666,9 +915,9 @@ export default function ApplicantWizard() {
                   </select>
                 </Field>
                 <Field label="Visa / immigration category">
-                  {visaDisabled ? (
+                  {visaDisabled || isLocked ? (
                     <select disabled className="input" style={{ background:'#f8fafc', color:'#94a3b8' }}>
-                      <option>Not applicable</option>
+                      <option>{visaDisabled ? 'Not applicable' : (demo.immigration_category || 'Not applicable')}</option>
                     </select>
                   ) : (
                     <select value={demo.immigration_category||''} onChange={d('immigration_category')} className="input">
@@ -679,10 +928,107 @@ export default function ApplicantWizard() {
                 </Field>
               </div>
               <div className="mt-3">
-                <Field label={otherSelected ? 'Additional information required — please explain the "Other" selection above' : ['H-1B','F-1 OPT','F-1 STEM OPT'].includes(demo.immigration_category||'') ? <span>SPONSORING EMPLOYER <span style={{color:'#9ca3af', fontWeight:'normal', fontSize:'0.875em'}}>(applicable to visa holders only)</span></span> : 'Additional information'} required={otherSelected}>
-                  <textarea className="input resize-none" rows={2} value={demo.work_auth_notes||''} onChange={d('work_auth_notes')} placeholder="Any additional details about your work authorization..." disabled={isLocked}/>
+                <Field
+                  label={
+                    otherSelected
+                      ? 'Additional information required — please explain the "Other" selection above'
+                      : isVisaHolder
+                      ? <span>SPONSORING EMPLOYER <span style={{color:'#ef4444', fontWeight:'normal', fontSize:'0.875em'}}>* required for Visa Holder</span></span>
+                      : ['H-1B','F-1 OPT','F-1 STEM OPT'].includes(demo.immigration_category||'')
+                      ? <span>SPONSORING EMPLOYER <span style={{color:'#9ca3af', fontWeight:'normal', fontSize:'0.875em'}}>(applicable to visa holders only)</span></span>
+                      : 'Additional information'
+                  }
+                  required={otherSelected || isVisaHolder}>
+                  <textarea className="input resize-none" rows={2} value={demo.work_auth_notes||''} onChange={d('work_auth_notes')}
+                    placeholder={isVisaHolder ? 'Enter sponsoring employer name (required)' : 'Any additional details about your work authorization...'}
+                    disabled={isLocked}/>
                 </Field>
               </div>
+
+              {/* Update Authorization Status button — only for locked profiles */}
+              {isLocked && (
+                <div className="mt-4">
+                  <button type="button" onClick={()=>setShowAuthUpdate(v=>!v)}
+                    className="btn-secondary text-xs">
+                    🔄 Update Authorization Status
+                  </button>
+
+                  {showAuthUpdate && (
+                    <div className="mt-3 border-2 border-blue-200 rounded-xl p-4 bg-blue-50/20 space-y-3">
+                      <div className="text-xs font-bold text-blue-700 uppercase tracking-wide">Authorization Status Update</div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="New Authorization Status" required>
+                          <select value={authUpdate.legal_status||''} onChange={e=>setAuthUpdate((p:any)=>({...p,legal_status:e.target.value,immigration_category:'',work_auth_notes:''}))} className="input">
+                            <option value="">Select...</option>
+                            <option value="us_citizen">US Citizen</option>
+                            <option value="permanent_resident">Permanent Resident (Green Card)</option>
+                            <option value="visa_holder">Visa Holder</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </Field>
+                        <Field label="Visa / Immigration Category">
+                          {['us_citizen','permanent_resident','other',''].includes(authUpdate.legal_status||'') ? (
+                            <select disabled className="input" style={{ background:'#f8fafc', color:'#94a3b8' }}><option>Not applicable</option></select>
+                          ) : (
+                            <select value={authUpdate.immigration_category||''} onChange={e=>setAuthUpdate((p:any)=>({...p,immigration_category:e.target.value}))} className="input">
+                              <option value="">Select...</option>
+                              {VISA_TYPES.map(v=><option key={v} value={v}>{v}</option>)}
+                            </select>
+                          )}
+                        </Field>
+                      </div>
+                      {(authUpdate.legal_status==='visa_holder' || authUpdate.legal_status==='other') && (
+                        <Field label={authUpdate.legal_status==='visa_holder' ? 'Sponsoring Employer' : 'Additional Information'} required>
+                          <textarea className="input resize-none" rows={2} value={authUpdate.work_auth_notes||''}
+                            onChange={e=>setAuthUpdate((p:any)=>({...p,work_auth_notes:e.target.value}))}/>
+                        </Field>
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <Field label="Previous Authorization End Date (MM/YYYY)" required>
+                          <DateInput value={authUpdate.prev_end_date||''} onChange={v=>setAuthUpdate((p:any)=>({...p,prev_end_date:v}))} required/>
+                        </Field>
+                        <Field label="New Authorization Start Date (MM/YYYY)" required>
+                          <DateInput value={authUpdate.new_start_date||''} onChange={v=>setAuthUpdate((p:any)=>({...p,new_start_date:v}))} required/>
+                        </Field>
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" disabled={saving || !authUpdate.legal_status || !/^(0[1-9]|1[0-2])\/\d{4}$/.test(authUpdate.prev_end_date||"") || !/^(0[1-9]|1[0-2])\/\d{4}$/.test(authUpdate.new_start_date||"")}
+                          className="btn-primary text-xs disabled:opacity-50"
+                          onClick={async()=>{
+                            setSaving(true);
+                            try {
+                              await applicantApi.addAuthHistory({
+                                legal_status: authUpdate.legal_status,
+                                immigration_category: authUpdate.immigration_category||'',
+                                work_auth_notes: authUpdate.work_auth_notes||'',
+                                history_entry: {
+                                  legal_status: demo.legal_status,
+                                  immigration_category: demo.immigration_category||'',
+                                  work_auth_notes: demo.work_auth_notes||'',
+                                  start_date: null,
+                                  end_date: authUpdate.prev_end_date,
+                                },
+                              });
+                              setDemo((p:any)=>({...p,
+                                legal_status: authUpdate.legal_status,
+                                immigration_category: authUpdate.immigration_category||'',
+                                work_auth_notes: authUpdate.work_auth_notes||'',
+                              }));
+                              await invalidate();
+                              setShowAuthUpdate(false);
+                              setAuthUpdate({legal_status:'',immigration_category:'',work_auth_notes:'',prev_end_date:'',new_start_date:''});
+                              toast('Authorization status saved — will freeze on next submission');
+                            } catch(e:any){ toast(e.response?.data?.detail||'Update failed','error'); }
+                            finally { setSaving(false); }
+                          }}>
+                          {saving ? 'Saving...' : 'Save Authorization Update'}
+                        </button>
+                        <button type="button" onClick={()=>{setShowAuthUpdate(false);setAuthUpdate({legal_status:'',immigration_category:'',work_auth_notes:'',prev_end_date:'',new_start_date:''}); }} className="btn-secondary text-xs">Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -695,17 +1041,27 @@ export default function ApplicantWizard() {
 
             {(data?.education||[]).map((e:any) => (
               <EntryCard key={e.id}
-                title={e.degree_name||(({high_school:'High School',diploma:'Diploma / Certificate',bachelors:'Under Graduate',pg_degree:'Post Graduate',doctorate:'Doctorate',research:'Research',other:'Other'} as any)[e.education_level])||'Education'}
+                title={e.degree_name||({'high_school':'High School','diploma':'Diploma / Certificate','bachelors':'Under Graduate','pg_degree':'Post Graduate','doctorate':'Doctorate','research':'Research','other':'Other'} as Record<string,string>)[e.education_level]||'Education'}
                 subtitle={e.institution_name}
-                dates={[e.start_date,e.end_date].filter(Boolean).join(' – ')}
+                dates={[fmtDate(e.start_date),fmtDate(e.end_date)].filter(Boolean).join(' – ')}
                 locked={isLocked}
                 onRemove={()=>applicantApi.deleteEducation(e.id).then(invalidate)}
                 expanded={expandedEntry===e.id}
                 onToggle={()=>{
                   if (expandedEntry===e.id){setExpandedEntry(null);setEditingEdu(null);}
-                  else{setExpandedEntry(e.id);setEditingEdu({...e});}
+                  else{setExpandedEntry(e.id);setEditingEdu(isItemLocked(e)?null:{...e});}
                 }}>
-                {editingEdu?.id===e.id && !isLocked && (
+                {expandedEntry===e.id && isLocked && (
+                  <div className="space-y-2 text-xs text-gray-600">
+                    <p><strong>Level:</strong> {({'high_school':'High School','diploma':'Diploma / Certificate','bachelors':'Under Graduate','pg_degree':'Post Graduate','doctorate':'Doctorate','research':'Research','other':'Other'} as Record<string,string>)[e.education_level]||e.education_level}</p>
+                    {e.degree_name && <p><strong>Degree:</strong> {e.degree_name}</p>}
+                    {e.specialization && <p><strong>Specialization:</strong> {e.specialization}</p>}
+                    <p><strong>Institution:</strong> {e.institution_name}</p>
+                    <p><strong>Location:</strong> {[e.institution_city,e.institution_state,e.institution_country].filter(Boolean).join(', ')}</p>
+                    <p><strong>Dates:</strong> {[e.start_date,e.end_date].filter(Boolean).join(' – ')}</p>
+                  </div>
+                )}
+                {editingEdu?.id===e.id && !isItemLocked(e) && (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="Level" required>
@@ -718,7 +1074,7 @@ export default function ApplicantWizard() {
                           <option value="research">Research</option>
                         </select>
                       </Field>
-                      <Field label="Degree / diploma"><Inp value={editingEdu.degree_name||''} onChange={(ev:any)=>setEditingEdu((p:any)=>({...p,degree_name:ev.target.value}))} placeholder="B.Sc. Computer Science"/></Field>
+                      <Field label="Degree / diploma" required><Inp value={editingEdu.degree_name||''} onChange={(ev:any)=>setEditingEdu((p:any)=>({...p,degree_name:ev.target.value}))} placeholder="B.Sc. Computer Science"/></Field>
                     </div>
                     <Field label="Specialization: Major/Minor">
                       <Inp value={editingEdu.specialization||''} onChange={(ev:any)=>setEditingEdu((p:any)=>({...p,specialization:ev.target.value}))}/>
@@ -758,7 +1114,7 @@ export default function ApplicantWizard() {
                     <option value="research">Research</option>
                   </select>
                 </Field>
-                <Field label="Degree / diploma name"><Inp value={eduForm.degree_name||''} onChange={(e:any)=>setEduForm((p:any)=>({...p,degree_name:e.target.value}))} placeholder="B.Sc. Computer Science"/></Field>
+                <Field label="Degree / diploma name" required><Inp value={eduForm.degree_name||''} onChange={(e:any)=>setEduForm((p:any)=>({...p,degree_name:e.target.value}))} placeholder="B.Sc. Computer Science"/></Field>
               </div>
               <div className="mt-3">
                 <Field label="Specialization: Major/Minor"><Inp value={eduForm.specialization||''} onChange={(e:any)=>setEduForm((p:any)=>({...p,specialization:e.target.value}))}/></Field>
@@ -796,15 +1152,23 @@ export default function ApplicantWizard() {
               <EntryCard key={w.id}
                 title={`${w.title} — ${w.employer_name}`}
                 subtitle={`${w.employment_type||''}${w.work_arrangement?.toLowerCase()==='consulting'?' · Consulting/Contracting':''}`}
-                dates={[w.start_date,w.end_date||'Present'].filter(Boolean).join(' – ')}
+                dates={[fmtDate(w.start_date),w.end_date?fmtDate(w.end_date):'Present'].filter(Boolean).join(' – ')}
                 locked={isLocked}
                 onRemove={()=>applicantApi.deleteWorkHistory(w.id).then(invalidate)}
                 expanded={expandedWorkId===w.id}
                 onToggle={()=>{
                   if(expandedWorkId===w.id){setExpandedWorkId(null);setEditingWork(null);setExpandedCeKey(null);setShowEditClientForm(false);}
-                  else{setExpandedWorkId(w.id);setEditingWork({...w,client_engagements:w.client_engagements||[]});}
+                  else{setExpandedWorkId(w.id);if(!isItemLocked(w))setEditingWork({...w,client_engagements:w.client_engagements||[]});}
                 }}>
-                {editingWork?.id===w.id && !isLocked && (
+                {expandedWorkId===w.id && isLocked && (
+                  <LockedWorkView w={w} isLocked={isLocked} saving={saving} toast={toast} api={applicantApi}
+                    invalidate={invalidate} setSaving={setSaving}
+                    clientForm={clientForm} setClientForm={setClientForm}
+                    expandedCeKey={expandedCeKey} setExpandedCeKey={setExpandedCeKey}
+                    showEditClientForm={showEditClientForm} setShowEditClientForm={setShowEditClientForm}
+                  />
+                )}
+                {editingWork?.id===w.id && !isItemLocked(w) && (
                   <div className="space-y-4">
                     <SectionHead title="Primary Employer" badge="Required"/>
                     <div className="grid grid-cols-2 gap-3">
@@ -943,7 +1307,7 @@ export default function ApplicantWizard() {
             <div className="border-2 border-dashed border-gray-200 rounded-xl mt-3">
               <button onClick={()=>setWorkForm((p:any)=>({...p,'_open':!p._open}))}
                 className="w-full flex items-center gap-2 p-3 text-sm font-semibold text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all">
-                + Add work history entry
+                + Add Work History Entry
               </button>
               {workForm._open && (
                 <div className="px-4 pb-4 space-y-4 border-t border-gray-100">
@@ -960,6 +1324,17 @@ export default function ApplicantWizard() {
                         <Inp value={workForm.employer_name} onChange={(e:any)=>setWorkForm((p:any)=>({...p,employer_name:e.target.value}))} placeholder="Acme Corp"/>
                       </Field>
                     </div>
+                    <div className="grid grid-cols-3 gap-3 mt-3">
+                      <Field label="Country" required>
+                        <select value={workForm.employer_country} onChange={e=>setWorkForm((p:any)=>({...p,employer_country:e.target.value}))} className="input">
+                          {COUNTRIES.map(c=><option key={c}>{c}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="State / Province" required>
+                        <StateAutocomplete value={workForm.employer_state} country={workForm.employer_country} onChange={v=>setWorkForm((p:any)=>({...p,employer_state:v}))}/>
+                      </Field>
+                      <Field label="City" required><Inp value={workForm.employer_city} onChange={(e:any)=>setWorkForm((p:any)=>({...p,employer_city:e.target.value}))}/></Field>
+                    </div>
                     <div className="mt-3">
                       <Field label="Role / title" required><Inp value={workForm.title} onChange={(e:any)=>setWorkForm((p:any)=>({...p,title:e.target.value}))} placeholder="Senior Developer"/></Field>
                     </div>
@@ -972,17 +1347,6 @@ export default function ApplicantWizard() {
                         <Inp value={workForm.end_date} onChange={(e:any)=>{setWorkForm((p:any)=>({...p,end_date:e.target.value}));setDateErrors((p:any)=>({...p,work_end:''}))} } placeholder="Present"/>
                         {dateErrors.work_end && <p className="text-[11px] text-red-500 mt-1">{dateErrors.work_end}</p>}
                       </Field>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3 mt-3">
-                      <Field label="Country" required>
-                        <select value={workForm.employer_country} onChange={e=>setWorkForm((p:any)=>({...p,employer_country:e.target.value}))} className="input">
-                          {COUNTRIES.map(c=><option key={c}>{c}</option>)}
-                        </select>
-                      </Field>
-                      <Field label="State / Province" required>
-                        <StateAutocomplete value={workForm.employer_state} country={workForm.employer_country} onChange={v=>setWorkForm((p:any)=>({...p,employer_state:v}))}/>
-                      </Field>
-                      <Field label="City" required><Inp value={workForm.employer_city} onChange={(e:any)=>setWorkForm((p:any)=>({...p,employer_city:e.target.value}))}/></Field>
                     </div>
                   </div>
 
@@ -1103,46 +1467,87 @@ export default function ApplicantWizard() {
                 title={`${r.referee_first_name} ${r.referee_last_name}`}
                 subtitle={[r.referee_title,r.referee_company].filter(Boolean).join(' · ')}
                 locked={isLocked}
-                onRemove={()=>applicantApi.deleteReference(r.id).then(invalidate)}
+                onRemove={!isLocked ? ()=>applicantApi.deleteReference(r.id).then(invalidate) : undefined}
                 expanded={expandedEntry===r.id}
                 onToggle={()=>{
                   if(expandedEntry===r.id){setExpandedEntry(null);setEditingRef(null);}
-                  else{setExpandedEntry(r.id);setEditingRef({...r});}
+                  else{setExpandedEntry(r.id);setEditingRef(isItemLocked(r)?null:{...r});}
                 }}>
-                {editingRef?.id===r.id && !isLocked && (
+                {/* Read-only view for locked entries */}
+                {expandedEntry===r.id && isLocked && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium mb-1" style={{ color: r.is_active===false ? '#94a3b8' : '#78b41e' }}>
+                      Status: {r.is_active===false ? 'Inactive' : 'Active'}
+                    </div>
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <p><strong>Email:</strong> {r.referee_email}</p>
+                      <p><strong>Title/Role:</strong> {r.referee_title}</p>
+                      <p><strong>Company:</strong> {r.referee_company}</p>
+                      <p><strong>Relationship:</strong> {r.relationship_type}{r.relationship_description ? ` — ${r.relationship_description}` : ''}</p>
+                    </div>
+                    <button
+                      onClick={async()=>{
+                        setSaving(true);
+                        try {
+                          await applicantApi.updateReference(r.id, {...r, is_active: r.is_active!==false ? false : true});
+                          await invalidate();
+                          toast(r.is_active!==false ? 'Reference deactivated' : 'Reference activated');
+                        } catch(e:any){ toast('Update failed','error'); }
+                        finally { setSaving(false); }
+                      }}
+                      disabled={saving}
+                      className="btn-secondary text-xs">
+                      {r.is_active===false ? '✓ Activate' : '⊘ Deactivate'}
+                    </button>
+                  </div>
+                )}
+                {editingRef?.id===r.id && !isItemLocked(r) && (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="First name" required><Inp value={editingRef.referee_first_name||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_first_name:e.target.value}))}/></Field>
-                      <Field label="Last name"><Inp value={editingRef.referee_last_name||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_last_name:e.target.value}))}/></Field>
+                      <Field label="Last name" required><Inp value={editingRef.referee_last_name||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_last_name:e.target.value}))}/></Field>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Work email" required><Inp type="email" value={editingRef.referee_email||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_email:e.target.value}))}/></Field>
-                      <Field label="Title"><Inp value={editingRef.referee_title||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_title:e.target.value}))}/></Field>
+                      <Field label="Email" required><Inp type="email" value={editingRef.referee_email||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_email:e.target.value}))}/></Field>
+                      <Field label="Title / Role" required><Inp value={editingRef.referee_title||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_title:e.target.value}))}/></Field>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Company"><Inp value={editingRef.referee_company||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_company:e.target.value}))}/></Field>
-                      <Field label="Relationship">
+                      <Field label="Company" required><Inp value={editingRef.referee_company||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,referee_company:e.target.value}))}/></Field>
+                      <Field label="Relationship" required>
                         <Sel opts={['','Manager','Peer','Direct Report','Client','Mentor','Other']} value={editingRef.relationship_type||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,relationship_type:e.target.value}))}/>
                       </Field>
                     </div>
-                    <button onClick={saveEditRef} disabled={saving} className="btn-primary text-xs">{saving?'Saving...':'Save changes'}</button>
+                    {editingRef.relationship_type==='Other' && (
+                      <Field label="Relationship Description" required>
+                        <Inp value={editingRef.relationship_description||''} onChange={(e:any)=>setEditingRef((p:any)=>({...p,relationship_description:e.target.value}))} placeholder="Describe your relationship..."/>
+                      </Field>
+                    )}
+                    <button onClick={saveEditRef} disabled={saving} className="btn-primary text-xs">{saving?'Saving...':'Save Changes'}</button>
                   </div>
                 )}
               </EntryCard>
             ))}
-            <AddSection label="Reference" onSave={addRef} saveRef={refSaveRef} onCancel={()=>setRefForm({referee_first_name:'',referee_last_name:'',referee_email:''})} saving={saving} canSave={!!refForm.referee_first_name&&!!refForm.referee_last_name&&!!refForm.referee_email}>
+            <AddSection label="Reference" onSave={addRef} saveRef={refSaveRef} onCancel={()=>setRefForm({referee_first_name:'',referee_last_name:'',referee_email:''})} saving={saving}
+              canSave={!!refForm.referee_first_name&&!!refForm.referee_last_name&&!!refForm.referee_email&&!!refForm.referee_title&&!!refForm.referee_company&&!!refForm.relationship_type&&(refForm.relationship_type!=='Other'||!!refForm.relationship_description)}>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="First name" required><Inp value={refForm.referee_first_name} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_first_name:e.target.value}))}/></Field>
-                <Field label="Last name"><Inp value={refForm.referee_last_name} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_last_name:e.target.value}))}/></Field>
+                <Field label="Last name" required><Inp value={refForm.referee_last_name} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_last_name:e.target.value}))}/></Field>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <Field label="Work email" required><Inp type="email" value={refForm.referee_email} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_email:e.target.value}))}/></Field>
-                <Field label="Title"><Inp value={refForm.referee_title||''} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_title:e.target.value}))}/></Field>
+                <Field label="Email" required><Inp type="email" value={refForm.referee_email} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_email:e.target.value}))}/></Field>
+                <Field label="Title / Role" required><Inp value={refForm.referee_title||''} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_title:e.target.value}))}/></Field>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <Field label="Company"><Inp value={refForm.referee_company||''} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_company:e.target.value}))}/></Field>
-                <Field label="Relationship"><Sel opts={['','Manager','Peer','Direct Report','Client','Mentor','Other']} value={refForm.relationship_type||''} onChange={(e:any)=>setRefForm((p:any)=>({...p,relationship_type:e.target.value}))}/></Field>
+                <Field label="Company" required><Inp value={refForm.referee_company||''} onChange={(e:any)=>setRefForm((p:any)=>({...p,referee_company:e.target.value}))}/></Field>
+                <Field label="Relationship" required><Sel opts={['','Manager','Peer','Direct Report','Client','Mentor','Other']} value={refForm.relationship_type||''} onChange={(e:any)=>setRefForm((p:any)=>({...p,relationship_type:e.target.value}))}/></Field>
               </div>
+              {refForm.relationship_type==='Other' && (
+                <div className="mt-3">
+                  <Field label="Relationship Description" required>
+                    <Inp value={refForm.relationship_description||''} onChange={(e:any)=>setRefForm((p:any)=>({...p,relationship_description:e.target.value}))} placeholder="Describe your relationship..."/>
+                  </Field>
+                </div>
+              )}
             </AddSection>
           </div>
         )}
@@ -1151,44 +1556,106 @@ export default function ApplicantWizard() {
         {step===4 && (
           <div>
             <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4">Certifications</h2>
-            {(data?.certifications||[]).map((c:any) => (
-              <EntryCard key={c.id}
-                title={c.cert_name}
-                subtitle={c.authority_name}
-                dates={c.issued_date}
+            {(data?.certifications||[]).map((cert:any) => (
+              <EntryCard key={cert.id}
+                title={cert.cert_name}
+                subtitle={cert.authority_name}
+                dates={cert.issued_date}
                 locked={isLocked}
-                onRemove={()=>applicantApi.deleteCertification(c.id).then(invalidate)}
-                expanded={expandedEntry===c.id}
+                onRemove={!isLocked ? ()=>applicantApi.deleteCertification(cert.id).then(invalidate) : undefined}
+                expanded={expandedEntry===cert.id}
                 onToggle={()=>{
-                  if(expandedEntry===c.id){setExpandedEntry(null);setEditingCert(null);}
-                  else{setExpandedEntry(c.id);setEditingCert({...c});}
+                  if(expandedEntry===cert.id){setExpandedEntry(null);setEditingCert(null);setUpdatingCertId(null);}
+                  else{setExpandedEntry(cert.id);setEditingCert(isItemLocked(cert)?null:{...cert});}
                 }}>
-                {editingCert?.id===c.id && !isLocked && (
+                {/* Read-only view for locked certs with Update button */}
+                {expandedEntry===cert.id && isLocked && (
+                  <div className="space-y-3">
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <p><strong>Type:</strong> {cert.cert_type}</p>
+                      <p><strong>Certifying Authority:</strong> {cert.authority_name}</p>
+                      <p><strong>Certificate #:</strong> {cert.cert_number||'—'}</p>
+                      <p><strong>Issued:</strong> {cert.issued_date}</p>
+                      <p><strong>Expires:</strong> {cert.expiry_date||'—'}</p>
+                      {cert.renewal_date && <p><strong>Renewed:</strong> {cert.renewal_date}</p>}
+                      {cert.renewal_expiry_date && <p><strong>Renewal Expiry:</strong> {cert.renewal_expiry_date}</p>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        disabled={saving}
+                        className={updatingCertId===cert.id ? 'btn-secondary text-xs opacity-50' : 'btn-primary text-xs'}
+                        style={updatingCertId===cert.id ? {} : { background:'#0078d2' }}
+                        onClick={()=>{
+                          if(updatingCertId===cert.id){setUpdatingCertId(null);setCertRenewal({renewal_date:'',renewal_expiry_date:''});}
+                          else{setUpdatingCertId(cert.id);setCertRenewal({renewal_date:'',renewal_expiry_date:''}); }
+                        }}>
+                        🔄 Update Certification
+                      </button>
+                    </div>
+                    {updatingCertId===cert.id && (
+                      <div className="border-2 border-blue-200 rounded-xl p-3 bg-blue-50/20 space-y-3">
+                        <div className="text-xs font-bold text-blue-700 uppercase tracking-wide">Certification Renewal</div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <Field label="Renewal Date" required>
+                            <Inp type="date" value={certRenewal.renewal_date||''} onChange={(e:any)=>setCertRenewal((p:any)=>({...p,renewal_date:e.target.value}))}/>
+                          </Field>
+                          <Field label="Renewal Expiration Date" required>
+                            <Inp type="date" value={certRenewal.renewal_expiry_date||''} onChange={(e:any)=>setCertRenewal((p:any)=>({...p,renewal_expiry_date:e.target.value}))}/>
+                          </Field>
+                        </div>
+                        <div className="flex gap-2">
+                          <button disabled={saving||!certRenewal.renewal_date||!certRenewal.renewal_expiry_date}
+                            className="btn-primary text-xs disabled:opacity-50"
+                            onClick={async()=>{
+                              setSaving(true);
+                              try {
+                                await applicantApi.updateCertification(cert.id, {...cert, ...certRenewal});
+                                await invalidate();
+                                setUpdatingCertId(null);
+                                setCertRenewal({renewal_date:'',renewal_expiry_date:''});
+                                toast('Certification renewed');
+                              } catch(e:any){ toast(e.response?.data?.detail||'Update failed','error'); }
+                              finally { setSaving(false); }
+                            }}>
+                            {saving ? 'Saving...' : 'Save Renewal'}
+                          </button>
+                          <button onClick={()=>{setUpdatingCertId(null);setCertRenewal({renewal_date:'',renewal_expiry_date:''}); }} className="btn-secondary text-xs">Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {editingCert?.id===cert.id && !isItemLocked(cert) && (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Type"><Sel opts={['','Technical','Leadership','Process','Functional','Social','Other']} value={editingCert.cert_type||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,cert_type:e.target.value}))}/></Field>
-                      <Field label="Certifying authority"><Inp value={editingCert.authority_name||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,authority_name:e.target.value}))}/></Field>
+                      <Field label="Type" required><Sel opts={['','Technical','Leadership','Process','Functional','Social','Other']} value={editingCert.cert_type||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,cert_type:e.target.value}))}/></Field>
+                      <Field label="Certifying Authority" required><Inp value={editingCert.authority_name||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,authority_name:e.target.value}))}/></Field>
                     </div>
                     <Field label="Certification name" required><Inp value={editingCert.cert_name||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,cert_name:e.target.value}))}/></Field>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="Certificate number"><Inp value={editingCert.cert_number||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,cert_number:e.target.value}))}/></Field>
-                      <Field label="Issued date"><Inp type="date" value={editingCert.issued_date||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,issued_date:e.target.value}))}/></Field>
+                      <Field label="Issued date" required><Inp type="date" value={editingCert.issued_date||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,issued_date:e.target.value}))}/></Field>
                     </div>
-                    <button onClick={saveEditCert} disabled={saving} className="btn-primary text-xs">{saving?'Saving...':'Save changes'}</button>
+                    <Field label="Expiration date" required><Inp type="date" value={editingCert.expiry_date||''} onChange={(e:any)=>setEditingCert((p:any)=>({...p,expiry_date:e.target.value}))}/></Field>
+                    <button onClick={saveEditCert} disabled={saving} className="btn-primary text-xs">{saving?'Saving...':'Save Changes'}</button>
                   </div>
                 )}
               </EntryCard>
             ))}
-            <AddSection label="Certification" onSave={addCert} saveRef={certSaveRef} onCancel={()=>setCertForm({cert_name:''})} saving={saving} canSave={!!certForm.cert_name}>
+            <AddSection label="Certification" onSave={addCert} saveRef={certSaveRef} onCancel={()=>setCertForm({cert_name:''})} saving={saving}
+              canSave={!!certForm.cert_name&&!!certForm.cert_type&&!!certForm.authority_name&&!!certForm.issued_date&&!!certForm.expiry_date}>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Type"><Sel opts={['','Technical','Leadership','Process','Functional','Social','Other']} value={certForm.cert_type||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,cert_type:e.target.value}))}/></Field>
-                <Field label="Certifying authority"><Inp value={certForm.authority_name||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,authority_name:e.target.value}))} placeholder="AWS, Google, PMI..."/></Field>
+                <Field label="Type" required><Sel opts={['','Technical','Leadership','Process','Functional','Social','Other']} value={certForm.cert_type||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,cert_type:e.target.value}))}/></Field>
+                <Field label="Certifying Authority" required><Inp value={certForm.authority_name||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,authority_name:e.target.value}))} placeholder="AWS, Google, PMI..."/></Field>
               </div>
               <div className="grid grid-cols-2 gap-3 mt-3">
                 <Field label="Certification name" required><Inp value={certForm.cert_name} onChange={(e:any)=>setCertForm((p:any)=>({...p,cert_name:e.target.value}))}/></Field>
                 <Field label="Certificate number"><Inp value={certForm.cert_number||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,cert_number:e.target.value}))}/></Field>
               </div>
-              <div className="mt-3"><Field label="Issued date"><Inp type="date" value={certForm.issued_date||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,issued_date:e.target.value}))}/></Field></div>
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <Field label="Issued date" required><Inp type="date" value={certForm.issued_date||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,issued_date:e.target.value}))}/></Field>
+                <Field label="Expiration date" required><Inp type="date" value={certForm.expiry_date||''} onChange={(e:any)=>setCertForm((p:any)=>({...p,expiry_date:e.target.value}))}/></Field>
+              </div>
             </AddSection>
           </div>
         )}
