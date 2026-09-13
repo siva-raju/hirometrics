@@ -695,7 +695,7 @@ export default function ApplicantWizard() {
 
             {(data?.education||[]).map((e:any) => (
               <EntryCard key={e.id}
-                title={e.degree_name||({'high_school':'High School','diploma':'Diploma / Certificate','bachelors':'Under Graduate','pg_degree':'Post Graduate','doctorate':'Doctorate','research':'Research','other':'Other'} as Record<string,string>)[e.education_level])||'Education'}
+                title={e.degree_name||(({high_school:'High School',diploma:'Diploma / Certificate',bachelors:'Under Graduate',pg_degree:'Post Graduate',doctorate:'Doctorate',research:'Research',other:'Other'} as any)[e.education_level])||'Education'}
                 subtitle={e.institution_name}
                 dates={[e.start_date,e.end_date].filter(Boolean).join(' – ')}
                 locked={isLocked}
