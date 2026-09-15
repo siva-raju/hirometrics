@@ -115,6 +115,7 @@ function JobDetailPanel({ item, resumes, profileReady, savedResume, savedCoverMs
 
   const [showPicker, setShowPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showConsentModal, setShowConsentModal] = useState(false);
 
   const handleViewResume = async () => {
     if (!selectedResume) return;
@@ -268,13 +269,7 @@ function JobDetailPanel({ item, resumes, profileReady, savedResume, savedCoverMs
             />
           </div>
 
-          {/* Consent notice */}
-          <div className="p-3 rounded-xl text-xs text-gray-600 leading-relaxed"
-            style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-            By clicking <strong>Apply</strong>, you consent to share your HiroMetrics profile,
-            resume, and credential information with the inviting organization and any subsequent
-            propagation. This information may be used for candidate evaluation, reporting, and analytics.
-          </div>
+          {/* Consent handled by modal */}
         </div>
 
         {/* Footer */}
@@ -286,7 +281,7 @@ function JobDetailPanel({ item, resumes, profileReady, savedResume, savedCoverMs
         )}
         <div className="p-5 border-t border-gray-100 flex-shrink-0 flex items-center gap-2">
           <button
-            onClick={handleApply}
+            onClick={() => setShowConsentModal(true)}
             disabled={submitting || !profileReady || !selectedResume}
             className="text-sm font-bold py-2 px-5 rounded-xl transition-all"
             title={!selectedResume ? 'Please attach a resume before applying' : ''}
@@ -296,7 +291,7 @@ function JobDetailPanel({ item, resumes, profileReady, savedResume, savedCoverMs
               border: 'none',
               cursor: (profileReady && selectedResume) ? 'pointer' : 'not-allowed',
             }}>
-            {submitting ? 'Submitting…' : 'Apply'}
+            Apply
           </button>
           <button
             onClick={() => { if (selectedResume) onSaveResume(selectedResume, coverMsg); onClose(); }}
@@ -314,6 +309,48 @@ function JobDetailPanel({ item, resumes, profileReady, savedResume, savedCoverMs
 
         </div>
       </div>
+
+    {/* ── Consent & Authorization Modal ─────────────────────────────── */}
+    {showConsentModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6"
+          style={{ border: '1px solid #e2e8f0' }}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="text-2xl">📋</div>
+            <div className="text-sm font-semibold text-gray-700">Please read and acknowledge before submitting</div>
+          </div>
+          <div className="text-sm text-gray-700 leading-relaxed space-y-3"
+            style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px' }}>
+            <p>I consent to and authorize HiroMetrics and/or any recipient organization to independently
+              verify any information I have submitted in my Profile and/or resume, either at HiroMetrics&#39;
+              discretion or upon request by a recipient. Verification may include direct contact with
+              employers, educational institutions, licensing authorities, or other referenced parties.
+              I also hereby provide consent to any third-parties that may be engaged by HiroMetrics
+              and/or the recipient organization, to perform some or all of the verification.</p>
+            <p>I acknowledge that any verification performed will remain associated with my HiroMetrics
+              profile and may be disclosed to recipients of any future job applications I submit
+              through this platform.</p>
+          </div>
+          <div className="flex gap-3 mt-5">
+            <button
+              onClick={async () => { setShowConsentModal(false); await handleApply(); }}
+              disabled={submitting}
+              className="flex-1 text-sm font-bold py-2.5 px-4 rounded-xl text-white"
+              style={{ background: '#0078d2', border: 'none', cursor: submitting ? 'wait' : 'pointer' }}>
+              {submitting ? 'Submitting…' : '✓ I Agree — Submit Application'}
+            </button>
+            <button
+              onClick={() => setShowConsentModal(false)}
+              disabled={submitting}
+              className="text-sm font-semibold py-2.5 px-4 rounded-xl"
+              style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

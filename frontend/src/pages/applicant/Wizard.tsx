@@ -54,11 +54,14 @@ function StateAutocomplete({ value, onChange, disabled, country }: { value:strin
         placeholder="Type to search..."
         onChange={e=>{setQuery(e.target.value);onChange(e.target.value);setOpen(true);setActiveIdx(-1);}}
         onFocus={()=>setOpen(true)}
-        onBlur={()=>setTimeout(()=>setOpen(false),150)}
+        onBlur={()=>{ setTimeout(()=>setOpen(false),150); if(isUS && query && !US_STATES.includes(query)){setQuery('');onChange('');} }}
         onKeyDown={handleKeyDown}
         autoComplete="off"
         role="combobox" aria-expanded={open} aria-autocomplete="list"
       />
+      {isUS && query && !US_STATES.includes(query) && (
+        <p className="text-[11px] text-red-500 mt-0.5">Please select a valid US state from the list</p>
+      )}
       {open && matches.length>0 && (
         <div ref={listRef} className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-0.5 max-h-48 overflow-y-auto" role="listbox">
           {matches.map((s,i)=>(
